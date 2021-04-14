@@ -31,12 +31,13 @@ async fn route(
         Payload::UpdateClient(info) => {
             sqlx::query!(
                 r#"
-                    INSERT INTO clients ( account_id, client_version, ip_addr, updated )
-                    VALUES ( $1, $2, $3, NOW() )
+                    INSERT INTO clients ( account_id, client_name, client_version, ip_addr, updated )
+                    VALUES ( $1, $2, $3, $4, NOW() )
                     ON CONFLICT ( account_id )
-                    DO UPDATE SET client_version = $2, ip_addr = $3, updated = NOW();
+                    DO UPDATE SET client_name = $2, client_version = $3, ip_addr = $4, updated = NOW();
                 "#,
                 account_id.to_string(),
+                &info.name,
                 &info.version,
                 ip_addr.map(|ip| ip.to_string()),
             )
@@ -59,7 +60,7 @@ async fn index(req: HttpRequest, body: web::Bytes, pool: web::Data<PgPool>) -> R
     if let Some(ip) = ip_addr {
         log::info!("Got request from {}", ip);
     } else {
-        log::info!("Got request unknown client");
+        log::info!("Got request from unknown client");
     }
 
     let msg = serde_json::from_slice::<Message>(&body)?;
@@ -67,6 +68,7 @@ async fn index(req: HttpRequest, body: web::Bytes, pool: web::Data<PgPool>) -> R
     if !msg.signature.verify(&*payload_bytes, &msg.public) {
         Err(error::ErrorUnauthorized(InternalError::InvalidSignature))
     } else {
+        // TODO: check client is registered on-chain
         let account_id = <MultiSignature as Verify>::Signer::from(msg.public).into_account();
         route(account_id, ip_addr, msg.payload, pool.get_ref())
             .await
@@ -115,7 +117,7 @@ async fn main() -> std::io::Result<()> {
 mod tests {
     use super::*;
     use actix_web::{dev::Service, http, test, App};
-    use polkabtc_telemetry::ClientInfo;
+    use polkabtc_telemetry_types::ClientInfo;
     use rand::{distributions::Alphanumeric, thread_rng, Rng};
     use sp_core::{sr25519::Signature, Pair};
     use sp_keyring::AccountKeyring;
@@ -134,37 +136,30 @@ mod tests {
         let mut app = test::init_service(App::new().data(pool.clone()).service(index)).await;
 
         let signer = AccountKeyring::Alice.pair();
-        let public = signer.public();
-        let account_id = <MultiSignature as Verify>::Signer::from(public).into_account();
+        let account_id = <MultiSignature as Verify>::Signer::from(signer.public()).into_account();
 
+        let name = new_rand_str();
         let version = new_rand_str();
         let payload = Payload::UpdateClient(ClientInfo {
+            name: name.clone(),
             version: version.clone(),
         });
+        let message = Message::from_payload_and_signer(payload, &signer);
 
-        let payload_bytes = serde_json::to_vec(&payload).unwrap();
-        let signature = signer.sign(&payload_bytes);
-
-        let req = test::TestRequest::post()
-            .uri("/")
-            .set_json(&Message {
-                public,
-                payload,
-                signature,
-            })
-            .to_request();
+        let req = test::TestRequest::post().uri("/").set_json(&message).to_request();
         let resp = app.call(req).await.unwrap();
 
         assert_eq!(resp.status(), http::StatusCode::OK);
 
         let record = sqlx::query!(
-            "SELECT client_version from clients where account_id = $1;",
+            "SELECT client_name, client_version from clients where account_id = $1;",
             account_id.to_string(),
         )
         .fetch_one(&pool)
         .await
         .unwrap();
 
+        assert_eq!(name, record.client_name);
         assert_eq!(version, record.client_version);
 
         Ok(())
@@ -178,6 +173,7 @@ mod tests {
         let signer = AccountKeyring::Alice.pair();
         let public = signer.public();
         let payload = Payload::UpdateClient(ClientInfo {
+            name: "Client".to_string(),
             version: new_rand_str(),
         });
         let signature = Signature::default();
