@@ -13,6 +13,11 @@ variables:
     variables:
         CARGO_HOME: $CI_PROJECT_DIR/.cargo
         RUSTC_WRAPPER: /usr/local/bin/sccache
+    services:
+        - name: postgres:11
+          alias: postgres
+          entrypoint: ["docker-entrypoint.sh"]
+          command: ["postgres"]
     before_script:
         - rustup show
         - rustc --version
@@ -20,22 +25,25 @@ variables:
         - cargo --version
         - SCCACHE_START_SERVER=1 SCCACHE_IDLE_TIMEOUT=0 sccache
         - sccache -s
+        - cargo install sqlx-cli
+        - sqlx db create
+        - sqlx migrate run
 
 .docker-base-job:
-  stage: deploy
-  image:
-    name: gcr.io/kaniko-project/executor:debug
-    entrypoint: [""]
-  script:
-    - echo "{\"auths\":{\"$CI_REGISTRY\":{\"username\":\"$CI_REGISTRY_USER\",\"password\":\"$CI_REGISTRY_PASSWORD\"}}}" > /kaniko/.docker/config.json
-    - |
-      /kaniko/executor \
-        --build-arg BINARY=http-server \
-        --context ${CI_PROJECT_DIR} \
-        --dockerfile ${CI_PROJECT_DIR}/Dockerfile \
-        --destination ${CI_REGISTRY_IMAGE}:${CI_COMMIT_REF_SLUG}-${CI_COMMIT_SHORT_SHA}-$(date +%s) \
-        --destination ${CI_REGISTRY_IMAGE}:${CI_COMMIT_REF_SLUG}
-  <<: *only_refs
+    stage: deploy
+    image:
+        name: gcr.io/kaniko-project/executor:debug
+        entrypoint: [""]
+    script:
+        - echo "{\"auths\":{\"$CI_REGISTRY\":{\"username\":\"$CI_REGISTRY_USER\",\"password\":\"$CI_REGISTRY_PASSWORD\"}}}" > /kaniko/.docker/config.json
+        - |
+          /kaniko/executor \
+            --build-arg BINARY=http-server \
+            --context ${CI_PROJECT_DIR} \
+            --dockerfile ${CI_PROJECT_DIR}/Dockerfile \
+            --destination ${CI_REGISTRY_IMAGE}:${CI_COMMIT_REF_SLUG}-${CI_COMMIT_SHORT_SHA}-$(date +%s) \
+            --destination ${CI_REGISTRY_IMAGE}:${CI_COMMIT_REF_SLUG}
+    <<: *only_refs
 
 stages:
     - test
@@ -46,15 +54,7 @@ test-telemetry:
     stage: test
     extends:
         - .rust-base-job
-    services:
-        - name: postgres:11
-          alias: postgres
-          entrypoint: ["docker-entrypoint.sh"]
-          command: ["postgres"]
     script:
-        - cargo install sqlx-cli
-        - sqlx db create
-        - sqlx migrate run
         - cargo fmt -- --check
         - cargo check --workspace --release
         - cargo test --workspace --release
@@ -66,20 +66,20 @@ test-telemetry:
         - merge_requests
 
 build-telemetry:
-  stage: build
-  extends:
-    - .rust-base-job
-  variables:
-    ARTIFACT_BIN_PATH: http-server
-  script:
-    - cargo build --release
-  artifacts:
-    name: "${CI_COMMIT_REF_SLUG}"
-    paths:
-      - target/release/${ARTIFACT_BIN_PATH}
+    stage: build
+    extends:
+        - .rust-base-job
+    variables:
+        ARTIFACT_BIN_PATH: http-server
+    script:
+        - cargo build --release
+    artifacts:
+        name: "${CI_COMMIT_REF_SLUG}"
+        paths:
+          - target/release/${ARTIFACT_BIN_PATH}
 
 docker-publish-telemetry:
-  dependencies:
-    - build-telemetry
-  extends:
-    - .docker-base-job
+    dependencies:
+        - build-telemetry
+    extends:
+        - .docker-base-job
