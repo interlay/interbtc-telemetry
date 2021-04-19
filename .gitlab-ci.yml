@@ -25,6 +25,7 @@ variables:
         - cargo --version
         - SCCACHE_START_SERVER=1 SCCACHE_IDLE_TIMEOUT=0 sccache
         - sccache -s
+        - export PATH="$HOME/$CARGO_HOME/bin:$PATH"
         - cargo install sqlx-cli
         - sqlx db create
         - sqlx migrate run
