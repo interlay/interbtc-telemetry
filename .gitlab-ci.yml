@@ -12,7 +12,6 @@ variables:
 .rust-base-job:
     variables:
         CARGO_HOME: $CI_PROJECT_DIR/.cargo
-        CARGO_HOME_BIN: $CARGO_HOME/bin
         RUSTC_WRAPPER: /usr/local/bin/sccache
     services:
         - name: postgres:11
@@ -27,8 +26,9 @@ variables:
         - SCCACHE_START_SERVER=1 SCCACHE_IDLE_TIMEOUT=0 sccache
         - sccache -s
         - cargo install sqlx-cli
-        - $CARGO_HOME_BIN/sqlx db create
-        - $CARGO_HOME_BIN/sqlx migrate run
+        - chmod +x $CARGO_HOME/bin/sqlx
+        - $CARGO_HOME/bin/sqlx db create
+        - $CARGO_HOME/bin/sqlx migrate run
 
 .docker-base-job:
     stage: deploy
