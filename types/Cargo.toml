@@ -1,6 +1,6 @@
 [package]
-name = "polkabtc-telemetry-types"
-version = "0.2.0"
+name = "interbtc-telemetry-types"
+version = "0.3.0"
 authors = ["Interlay <contact@interlay.io>"]
 edition = "2018"
 
