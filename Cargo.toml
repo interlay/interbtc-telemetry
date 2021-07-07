@@ -23,11 +23,11 @@ sqlx = { version = "0.4.2", features = [ "runtime-actix-rustls", "postgres", "sq
 thiserror = "1.0"
 clap = "3.0.0-beta.2"
 
-sp-runtime = { git = "https://github.com/paritytech/substrate", branch = "polkadot-v0.9.5" }
-sp-keyring = { git = "https://github.com/paritytech/substrate", branch = "polkadot-v0.9.5" }
-sp-core = { git = "https://github.com/paritytech/substrate", branch = "polkadot-v0.9.5" }
+sp-runtime = { git = "https://github.com/paritytech/substrate", branch = "polkadot-v0.9.7" }
+sp-keyring = { git = "https://github.com/paritytech/substrate", branch = "polkadot-v0.9.7" }
+sp-core = { git = "https://github.com/paritytech/substrate", branch = "polkadot-v0.9.7" }
 
-polkabtc-telemetry-types = { path = "./types" }
+interbtc-telemetry-types = { path = "./types" }
 
 [dev-dependencies]
 actix-rt = "1"
