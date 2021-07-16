@@ -1,6 +1,6 @@
 use actix_web::client::Client;
 use clap::Clap;
-use polkabtc_telemetry_types::{ClientInfo, Message, Payload};
+use interbtc_telemetry_types::{ClientInfo, Message, Payload};
 use sp_keyring::AccountKeyring;
 
 /// Simple client to interact with the telemetry service.

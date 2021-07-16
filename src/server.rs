@@ -1,6 +1,6 @@
 use actix_web::{error, middleware, post, web, App, Error, HttpRequest, HttpResponse, HttpServer};
 use clap::Clap;
-use polkabtc_telemetry_types::{Message, Payload};
+use interbtc_telemetry_types::{Message, Payload};
 use sp_runtime::{
     traits::{IdentifyAccount, Verify},
     MultiSignature,
@@ -117,7 +117,7 @@ async fn main() -> std::io::Result<()> {
 mod tests {
     use super::*;
     use actix_web::{dev::Service, http, test, App};
-    use polkabtc_telemetry_types::ClientInfo;
+    use interbtc_telemetry_types::ClientInfo;
     use rand::{distributions::Alphanumeric, thread_rng, Rng};
     use sp_core::{sr25519::Signature, Pair};
     use sp_keyring::AccountKeyring;
