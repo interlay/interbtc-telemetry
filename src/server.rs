@@ -1,4 +1,7 @@
-use actix_web::{error, middleware, post, web, App, Error, HttpRequest, HttpResponse, HttpServer};
+use actix_web::{
+    dev::ConnectionInfo, error, http::HeaderName, middleware, post, web, App, Error, HttpRequest, HttpResponse,
+    HttpServer,
+};
 use clap::Clap;
 use interbtc_telemetry_types::{Message, Payload};
 use sp_runtime::{
@@ -6,10 +9,41 @@ use sp_runtime::{
     MultiSignature,
 };
 use sqlx::{postgres::PgPool, Error as SqlxError};
-use std::net::Ipv4Addr;
+use std::{cell::Ref, net::Ipv4Addr};
 use thiserror::Error;
 
 pub type AccountId = <<MultiSignature as Verify>::Signer as IdentifyAccount>::AccountId;
+
+const X_ORIGINAL_FORWARDED_FOR: &[u8] = b"x-original-forwarded-for";
+
+// like ConnectionInfo but also parses X_ORIGINAL_FORWARDED_FOR
+struct ConnectionInfoExt<'a> {
+    info: Ref<'a, ConnectionInfo>,
+    original_remote_addr: Option<String>,
+}
+
+impl<'a> ConnectionInfoExt<'a> {
+    fn get(req: &'a HttpRequest) -> Self {
+        let head = req.head();
+        Self {
+            info: ConnectionInfo::get(head, &*req.app_config()),
+            original_remote_addr: head
+                .headers
+                .get(&HeaderName::from_lowercase(X_ORIGINAL_FORWARDED_FOR).unwrap())
+                .and_then(|h| h.to_str().ok())
+                .and_then(|h| h.split(',').next().map(|v| v.trim()))
+                .map(|s| s.to_owned()),
+        }
+    }
+
+    fn realip_remote_addr(&self) -> Option<&str> {
+        if let Some(ref r) = self.original_remote_addr {
+            Some(r)
+        } else {
+            self.info.realip_remote_addr()
+        }
+    }
+}
 
 #[derive(Error, Debug)]
 pub enum InternalError {
@@ -50,7 +84,7 @@ async fn route(
 
 #[post("/")]
 async fn index(req: HttpRequest, body: web::Bytes, pool: web::Data<PgPool>) -> Result<HttpResponse, Error> {
-    let ip_addr = req.connection_info().realip_remote_addr().and_then(|mut addr| {
+    let ip_addr = ConnectionInfoExt::get(&req).realip_remote_addr().and_then(|mut addr| {
         if let Some(port_idx) = addr.find(':') {
             addr = &addr[..port_idx];
         }
@@ -116,7 +150,12 @@ async fn main() -> std::io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use actix_web::{dev::Service, http, test, App};
+    use actix_web::{
+        dev::Service,
+        http,
+        test::{self, TestRequest},
+        App,
+    };
     use interbtc_telemetry_types::ClientInfo;
     use rand::{distributions::Alphanumeric, thread_rng, Rng};
     use sp_core::{sr25519::Signature, Pair};
@@ -189,6 +228,20 @@ mod tests {
         let resp = app.call(req).await.unwrap();
 
         assert_eq!(resp.status(), http::StatusCode::UNAUTHORIZED);
+
+        Ok(())
+    }
+
+    #[actix_rt::test]
+    async fn should_parse_ip_addr() -> Result<(), Error> {
+        let req = TestRequest::with_header(X_ORIGINAL_FORWARDED_FOR, "1.1.1.1").to_http_request();
+        assert_eq!(ConnectionInfoExt::get(&req).realip_remote_addr(), Some("1.1.1.1"));
+
+        let req = TestRequest::with_header("x-forwarded-for", "1.1.1.1").to_http_request();
+        assert_eq!(ConnectionInfoExt::get(&req).realip_remote_addr(), Some("1.1.1.1"));
+
+        let req = TestRequest::default().to_http_request();
+        assert_eq!(ConnectionInfoExt::get(&req).realip_remote_addr(), None);
 
         Ok(())
     }
